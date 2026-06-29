@@ -26,17 +26,15 @@ async function sbGet() {
 }
 
 async function sbSet(payload) {
-  // upsert single row with id=1
-  const body = JSON.stringify([{ id: 1, data: JSON.stringify(payload) }]);
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}`, {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?on_conflict=id`, {
     method: 'POST',
     headers: {
       'apikey': SUPABASE_KEY,
       'Authorization': `Bearer ${SUPABASE_KEY}`,
       'Content-Type': 'application/json',
-      'Prefer': 'resolution=merge-duplicates',
+      'Prefer': 'resolution=merge-duplicates,return=minimal',
     },
-    body,
+    body: JSON.stringify([{ id: 1, data: JSON.stringify(payload) }]),
   });
   if (!res.ok) throw new Error('Supabase SET failed: ' + await res.text());
 }
