@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Админ · hippo.uz</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .admin-bar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .save-status {
+      font-size: 12.5px;
+      color: var(--ink-muted);
+    }
+    .save-status.dirty { color: var(--warn); font-weight: 500; }
+    .save-status.saved { color: var(--accent-deep); }
+
+    .editor-grid {
+      display: grid;
+      gap: 18px;
+    }
+
+    .dept-editor {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .dept-editor-head {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .dept-editor-head .field { flex: 1; }
+
+    .row { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+    @media (max-width: 540px) { .row { grid-template-columns: 1fr; } }
+
+    .chip-input {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 8px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      min-height: 44px;
+    }
+    .chip-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .chip-input .chip {
+      background: var(--accent-soft);
+      color: var(--accent-deep);
+      padding: 3px 6px 3px 10px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .chip-input .chip button {
+      background: none;
+      border: none;
+      color: var(--accent-deep);
+      cursor: pointer;
+      padding: 0 2px;
+      font-size: 14px;
+      line-height: 1;
+      opacity: 0.6;
+    }
+    .chip-input .chip button:hover { opacity: 1; }
+    .chip-input input {
+      border: none;
+      outline: none;
+      flex: 1;
+      min-width: 100px;
+      padding: 4px;
+      background: transparent;
+      font-size: 13.5px;
+    }
+
+    .person-editor {
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .person-editor-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+      font-size: 13.5px;
+      color: var(--ink-soft);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--ink-muted);
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--radius-lg);
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      hippo.uz
+      <span class="sub">Админ</span>
+    </div>
+    <div class="actions admin-bar">
+      <span class="save-status" id="saveStatus">—</span>
+      <a href="/" class="btn btn-ghost btn-sm">Просмотр</a>
+      <button class="btn btn-ghost btn-sm" id="logoutBtn">Выйти</button>
+      <button class="btn btn-primary btn-sm" id="saveBtn">Сохранить</button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="page-head">
+      <h1>Редактирование структуры</h1>
+      <div class="meta">
+        <span>Все изменения отражаются на публичной странице после сохранения.</span>
+      </div>
+    </section>
+
+    <div style="margin-bottom: 18px;">
+      <button class="btn btn-ghost" id="addDeptBtn">+ Добавить отдел</button>
+    </div>
+
+    <section class="editor-grid" id="editor"></section>
+  </main>
+
+  <script>
+    // ------------ state ------------
+    let state = { company: { name: 'hippo.uz', tagline: '' }, departments: [] };
+    let dirty = false;
+
+    const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Math.random().toString(36).slice(2));
+
+    function emptyPerson() {
+      return { id: uid(), name: '', position: '', email: '', phone: '', telegram: '' };
+    }
+    function emptyDept() {
+      return {
+        id: uid(),
+        name: '',
+        description: '',
+        responsibilities: [],
+        head: emptyPerson(),
+        employees: [],
+      };
+    }
+
+    function setDirty(v) {
+      dirty = v;
+      const el = document.getElementById('saveStatus');
+      if (v) { el.textContent = 'Есть несохранённые изменения'; el.className = 'save-status dirty'; }
+      else { el.textContent = 'Всё сохранено'; el.className = 'save-status saved'; }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    // ------------ render ------------
+    function render() {
+      const root = document.getElementById('editor');
+      if (!state.departments.length) {
+        root.innerHTML = `<div class="empty-state">Отделов ещё нет. Нажми <b>«Добавить отдел»</b>, чтобы начать.</div>`;
+        return;
+      }
+      root.innerHTML = state.departments.map((d, di) => deptEditorHTML(d, di)).join('');
+      attachHandlers();
+    }
+
+    function personEditorHTML(p, kind, di, ei) {
+      const path = kind === 'head' ? `head` : `employees.${ei}`;
+      return `
+        <div class="person-editor" data-person-path="${path}" data-dept-index="${di}">
+          <div class="person-editor-header">
+            <span>${kind === 'head' ? 'Руководитель отдела' : `Сотрудник #${ei + 1}`}</span>
+            ${kind === 'employee' ? `<button type="button" class="btn btn-danger btn-sm" data-action="remove-employee" data-di="${di}" data-ei="${ei}">Удалить</button>` : ''}
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Имя</label>
+              <input class="input" data-field="name" value="${escapeHtml(p.name)}" placeholder="Иван Иванов" />
+            </div>
+            <div class="field">
+              <label>Должность</label>
+              <input class="input" data-field="position" value="${escapeHtml(p.position)}" placeholder="Backend developer" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Email</label>
+              <input class="input" data-field="email" type="email" value="${escapeHtml(p.email)}" placeholder="ivan@hippo.uz" />
+            </div>
+            <div class="field">
+              <label>Телефон</label>
+              <input class="input" data-field="phone" value="${escapeHtml(p.phone)}" placeholder="+998 90 000 00 00" />
+            </div>
+          </div>
+          <div class="field">
+            <label>Telegram (без @)</label>
+            <input class="input" data-field="telegram" value="${escapeHtml(p.telegram)}" placeholder="ivanov" />
+          </div>
+        </div>
+      `;
+    }
+
+    function deptEditorHTML(d, di) {
+      return `
+        <article class="dept-editor" data-dept-index="${di}">
+          <div class="dept-editor-head">
+            <div class="field" style="flex:1">
+              <label>Название отдела</label>
+              <input class="input" data-dept-field="name" value="${escapeHtml(d.name)}" placeholder="Например: Разработка" />
+            </div>
+            <button type="button" class="btn btn-danger btn-sm" data-action="remove-dept" data-di="${di}" style="margin-top: 24px;">Удалить отдел</button>
+          </div>
+
+          <div class="field">
+            <label>Краткое описание</label>
+            <textarea class="textarea" data-dept-field="description" placeholder="Чем занимается отдел">${escapeHtml(d.description)}</textarea>
+          </div>
+
+          <div class="field">
+            <label>Обязанности (Enter после каждой)</label>
+            <div class="chip-input" data-chip-input data-di="${di}">
+              ${(d.responsibilities || []).map((r, ri) => `
+                <span class="chip">
+                  ${escapeHtml(r)}
+                  <button type="button" data-action="remove-resp" data-di="${di}" data-ri="${ri}" title="Удалить">×</button>
+                </span>
+              `).join('')}
+              <input type="text" placeholder="Добавить и нажать Enter" data-resp-input data-di="${di}" />
+            </div>
+          </div>
+
+          <div>
+            <div class="section-label">Руководитель</div>
+            ${personEditorHTML(d.head || emptyPerson(), 'head', di, null)}
+          </div>
+
+          <div>
+            <div class="section-label">Сотрудники · ${(d.employees || []).length}</div>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              ${(d.employees || []).map((e, ei) => personEditorHTML(e, 'employee', di, ei)).join('')}
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" data-action="add-employee" data-di="${di}" style="margin-top: 10px;">+ Добавить сотрудника</button>
+          </div>
+        </article>
+      `;
+    }
+
+    // ------------ event wiring ------------
+    function attachHandlers() {
+      // Department-level fields
+      document.querySelectorAll('[data-dept-field]').forEach(input => {
+        input.addEventListener('input', (e) => {
+          const di = parseInt(e.target.closest('[data-dept-index]').dataset.deptIndex, 10);
+          const field = e.target.dataset.deptField;
+          state.departments[di][field] = e.target.value;
+          setDirty(true);
+        });
+      });
+
+      // Person fields
+      document.querySelectorAll('[data-person-path]').forEach(personEl => {
+        const di = parseInt(personEl.dataset.deptIndex, 10);
+        const path = personEl.dataset.personPath;
+        personEl.querySelectorAll('input[data-field]').forEach(input => {
+          input.addEventListener('input', (e) => {
+            const field = e.target.dataset.field;
+            const target = resolvePersonTarget(di, path);
+            if (!target) return;
+            target[field] = e.target.value;
+            setDirty(true);
+          });
+        });
+      });
+
+      // Action buttons
+      document.querySelectorAll('[data-action]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const action = btn.dataset.action;
+          const di = parseInt(btn.dataset.di, 10);
+          if (action === 'remove-dept') {
+            if (!confirm('Удалить отдел вместе со всеми сотрудниками?')) return;
+            state.departments.splice(di, 1);
+            setDirty(true); render();
+          } else if (action === 'add-employee') {
+            state.departments[di].employees = state.departments[di].employees || [];
+            state.departments[di].employees.push(emptyPerson());
+            setDirty(true); render();
+          } else if (action === 'remove-employee') {
+            const ei = parseInt(btn.dataset.ei, 10);
+            state.departments[di].employees.splice(ei, 1);
+            setDirty(true); render();
+          } else if (action === 'remove-resp') {
+            const ri = parseInt(btn.dataset.ri, 10);
+            state.departments[di].responsibilities.splice(ri, 1);
+            setDirty(true); render();
+          }
+        });
+      });
+
+      // Responsibility chip input
+      document.querySelectorAll('[data-resp-input]').forEach(input => {
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault();
+            const val = input.value.trim().replace(/,$/, '').trim();
+            if (!val) return;
+            const di = parseInt(input.dataset.di, 10);
+            state.departments[di].responsibilities = state.departments[di].responsibilities || [];
+            state.departments[di].responsibilities.push(val);
+            input.value = '';
+            setDirty(true); render();
+            // Refocus the input after re-render
+            setTimeout(() => {
+              const re = document.querySelector(`[data-resp-input][data-di="${di}"]`);
+              if (re) re.focus();
+            }, 0);
+          }
+        });
+      });
+    }
+
+    function resolvePersonTarget(di, path) {
+      const dept = state.departments[di];
+      if (!dept) return null;
+      if (path === 'head') {
+        if (!dept.head) dept.head = emptyPerson();
+        return dept.head;
+      }
+      const m = path.match(/^employees\.(\d+)$/);
+      if (m) return dept.employees[parseInt(m[1], 10)];
+      return null;
+    }
+
+    // ------------ load & save ------------
+    async function load() {
+      const res = await fetch('/api/data');
+      const data = await res.json();
+      state = {
+        company: data.company || { name: 'hippo.uz', tagline: '' },
+        departments: (data.departments || []).map(d => ({
+          ...d,
+          responsibilities: d.responsibilities || [],
+          head: d.head || emptyPerson(),
+          employees: d.employees || [],
+        })),
+      };
+      render();
+      setDirty(false);
+    }
+
+    async function save() {
+      const btn = document.getElementById('saveBtn');
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = 'Сохраняем…';
+      try {
+        const res = await fetch('/api/data', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(state),
+        });
+        if (!res.ok) {
+          if (res.status === 401) { window.location.href = '/admin/login'; return; }
+          throw new Error('HTTP ' + res.status);
+        }
+        await load();
+      } catch (e) {
+        alert('Не удалось сохранить: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    }
+
+    // ------------ wiring ------------
+    document.getElementById('addDeptBtn').addEventListener('click', () => {
+      state.departments.push(emptyDept());
+      setDirty(true);
+      render();
+      // scroll to bottom
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    });
+
+    document.getElementById('saveBtn').addEventListener('click', save);
+
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.href = '/';
+    });
+
+    // Warn before leaving with unsaved changes
+    window.addEventListener('beforeunload', (e) => {
+      if (dirty) { e.preventDefault(); e.returnValue = ''; }
+    });
+
+    load();
+  </script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Вход · hippo.uz</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .auth-shell {
+      max-width: 380px;
+      margin: 120px auto 40px;
+      padding: 0 24px;
+    }
+    .auth-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+    }
+    .auth-card h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+    .auth-card p {
+      color: var(--ink-muted);
+      font-size: 13.5px;
+      margin-bottom: 24px;
+    }
+    .auth-card form {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .error {
+      color: var(--warn);
+      font-size: 13px;
+      min-height: 18px;
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      hippo.uz
+      <span class="sub">Админ</span>
+    </div>
+    <div class="actions">
+      <a href="/" class="btn btn-ghost btn-sm">← К справочнику</a>
+    </div>
+  </header>
+
+  <main class="auth-shell">
+    <div class="auth-card">
+      <h1>Вход в админку</h1>
+      <p>Только для администратора hippo.uz.</p>
+      <form id="loginForm" autocomplete="off">
+        <div class="field">
+          <label for="password">Пароль</label>
+          <input id="password" class="input" type="password" required autofocus />
+        </div>
+        <div class="error" id="err"></div>
+        <button class="btn btn-primary" type="submit">Войти</button>
+      </form>
+    </div>
+  </main>
+
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const err = document.getElementById('err');
+      err.textContent = '';
+      const password = document.getElementById('password').value;
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+        });
+        if (!res.ok) {
+          err.textContent = 'Неверный пароль.';
+          return;
+        }
+        window.location.href = '/admin';
+      } catch (e) {
+        err.textContent = 'Сетевая ошибка. Попробуй ещё раз.';
+      }
+    });
+  </script>
+</body>
+</html>

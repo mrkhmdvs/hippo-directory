@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Команда · hippo.uz</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      hippo.uz
+      <span class="sub">Команда</span>
+    </div>
+    <div class="actions" id="topActions"></div>
+  </header>
+
+  <main class="shell">
+    <section class="page-head">
+      <h1 id="pageTitle">Структура команды</h1>
+      <div class="meta">
+        <span id="deptCount">—</span>
+        <span class="dot-sep"></span>
+        <span id="peopleCount">—</span>
+        <span class="dot-sep" id="updatedSep" style="display:none"></span>
+        <span id="updatedAt"></span>
+      </div>
+    </section>
+
+    <section id="content">
+      <div class="empty"><h3>Загружаем структуру…</h3></div>
+    </section>
+  </main>
+
+  <script>
+    const TG = (h) => `https://t.me/${h.replace(/^@+/, '')}`;
+    const TEL = (p) => `tel:${p.replace(/[^+\d]/g, '')}`;
+    const MAIL = (e) => `mailto:${e}`;
+    const initials = (n) => (n || '').split(/\s+/).filter(Boolean).slice(0, 2).map(s => s[0]).join('').toUpperCase();
+    const fmtDate = (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+    };
+
+    function personHTML(p, isHead) {
+      if (!p || !p.name) return '';
+      const contacts = [];
+      if (p.email) contacts.push(`<a href="${MAIL(p.email)}">✉ ${p.email}</a>`);
+      if (p.phone) contacts.push(`<a href="${TEL(p.phone)}">☏ ${p.phone}</a>`);
+      if (p.telegram) contacts.push(`<a href="${TG(p.telegram)}" target="_blank" rel="noopener">⌁ @${p.telegram.replace(/^@+/, '')}</a>`);
+
+      return `
+        <div class="person">
+          <div class="avatar">${initials(p.name)}</div>
+          <div class="person-body">
+            <div class="person-name">
+              ${escapeHtml(p.name)}
+              ${isHead ? '<span class="head-badge">Руководитель</span>' : ''}
+            </div>
+            ${p.position ? `<div class="person-position">${escapeHtml(p.position)}</div>` : ''}
+            ${contacts.length ? `<div class="person-contacts">${contacts.join('')}</div>` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function deptHTML(d) {
+      const resps = (d.responsibilities || []).filter(Boolean);
+      const employees = (d.employees || []).filter(e => e && e.name);
+      return `
+        <article class="dept">
+          <div class="dept-header">
+            <h2>${escapeHtml(d.name || 'Без названия')}</h2>
+            ${d.description ? `<div class="desc">${escapeHtml(d.description)}</div>` : ''}
+          </div>
+          ${resps.length ? `
+            <div>
+              <div class="section-label">Обязанности</div>
+              <div class="resp-list">
+                ${resps.map(r => `<span class="chip">${escapeHtml(r)}</span>`).join('')}
+              </div>
+            </div>` : ''}
+          ${d.head && d.head.name ? `
+            <div>
+              <div class="section-label">Руководитель</div>
+              ${personHTML(d.head, true)}
+            </div>` : ''}
+          ${employees.length ? `
+            <div>
+              <div class="section-label">Сотрудники · ${employees.length}</div>
+              ${employees.map(e => personHTML(e, false)).join('')}
+            </div>` : ''}
+        </article>
+      `;
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    async function load() {
+      try {
+        const [data, auth] = await Promise.all([
+          fetch('/api/data').then(r => r.json()),
+          fetch('/api/auth/status').then(r => r.json()),
+        ]);
+
+        // top actions: admin button if authenticated, otherwise nothing visible
+        const topActions = document.getElementById('topActions');
+        if (auth.isAdmin) {
+          topActions.innerHTML = `<a class="btn btn-ghost btn-sm" href="/admin">Открыть админку</a>`;
+        }
+
+        const depts = data.departments || [];
+        const totalPeople = depts.reduce((sum, d) => {
+          return sum + (d.head?.name ? 1 : 0) + (d.employees || []).filter(e => e?.name).length;
+        }, 0);
+
+        document.getElementById('deptCount').textContent = `${depts.length} ${plural(depts.length, 'отдел', 'отдела', 'отделов')}`;
+        document.getElementById('peopleCount').textContent = `${totalPeople} ${plural(totalPeople, 'человек', 'человека', 'человек')}`;
+        if (data.updatedAt) {
+          document.getElementById('updatedSep').style.display = 'inline';
+          document.getElementById('updatedAt').textContent = `обновлено ${fmtDate(data.updatedAt)}`;
+        }
+
+        const content = document.getElementById('content');
+        if (!depts.length) {
+          content.innerHTML = `<div class="empty"><h3>Пока пусто</h3><p>Админ ещё не добавил отделы.</p></div>`;
+          return;
+        }
+        content.innerHTML = `<div class="dept-grid">${depts.map(deptHTML).join('')}</div>`;
+      } catch (e) {
+        document.getElementById('content').innerHTML =
+          `<div class="empty"><h3>Не получилось загрузить</h3><p>${escapeHtml(e.message)}</p></div>`;
+      }
+    }
+
+    function plural(n, one, few, many) {
+      const mod10 = n % 10, mod100 = n % 100;
+      if (mod10 === 1 && mod100 !== 11) return one;
+      if ([2,3,4].includes(mod10) && ![12,13,14].includes(mod100)) return few;
+      return many;
+    }
+
+    load();
+  </script>
+</body>
+</html>
